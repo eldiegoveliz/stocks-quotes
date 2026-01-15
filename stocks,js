@@ -1,0 +1,93 @@
+const readline = require('readline');
+const tickers = require('./tickers');
+
+let rows = tickers.length < 20 ? tickers.length : 20; 
+let columnwidth = 80; 
+let count = 0;
+let startTime = Date.now();
+let randchars = ['*','%','$','&','@','!','^','~','+','?','/','|','<','>'];
+
+console.clear();
+
+function formatVol(num) {
+    if (num >= 1.0e+9) return (num / 1.0e+9).toFixed(1) + "B";
+    if (num >= 1.0e+6) return (num / 1.0e+6).toFixed(1) + "M";
+    if (num >= 1.0e+3) return (num / 1.0e+3).toFixed(1) + "k";
+    return num.toString();
+}
+
+function drawScreen() {
+  for (i = 0; i < tickers.length; i++) {
+    let k = Math.floor(i / rows);
+    let y = i - (rows * k);
+    
+    readline.cursorTo(process.stdout, k * columnwidth, y);
+    
+    let dashes = "-".repeat(columnwidth - tickers[i].length - 1);
+    process.stdout.write(`\x1b[33m${tickers[i]}${dashes}\x1b[0m`);
+  }
+};
+
+drawScreen();
+
+readline.cursorTo(process.stdout, 0, rows + 5);
+
+setInterval(grab, 500);
+
+async function grab() {
+    const tickerString = tickers.join(",");
+    
+    try {
+        const res = await fetch(`https://generic709.herokuapp.com/stockc/${tickerString}`);
+        const allData = await res.json();
+
+        for (const singleticker of tickers) {
+            const quote = allData[singleticker];
+            if (!quote || typeof quote.price !== 'number') continue;
+
+            let price = quote.price.toFixed(2);
+            let displayBid = (quote.bid > 0) ? quote.bid.toFixed(2) : "-.-";
+            let displayAsk = (quote.ask > 0) ? quote.ask.toFixed(2) : "-.-";
+            let displayPrice = quote.price.toFixed(2);
+	    let vol = formatVol(quote.vol);
+            let pct = quote.pct_change;
+
+            let color = "\x1b[37m"; 
+            let arrow = "";
+            
+            if (pct > 0) {
+                color = "\x1b[32m";
+                arrow = "▲";
+            } else if (pct < 0) {
+                color = "\x1b[31m";
+                arrow = "▼";
+            }
+            
+            let pctString = `${arrow}${pct.toFixed(2)}%`;
+
+            let k = Math.floor(tickers.indexOf(singleticker) / rows);
+            let y = tickers.indexOf(singleticker) - (rows * k);
+            let x = (k * columnwidth) + 6;
+
+            readline.cursorTo(process.stdout, x, y);
+            
+            process.stdout.write(
+                `\x1b[37m${price}  \x1b[36mB:${displayBid}  \x1b[35mA:${displayAsk}\x1b[0m  ${color}${pctString}\x1b[0m  \x1b[36mVol:${vol}\x1b[0m   \x1b[K` 
+            );
+        }
+
+        if (count % 10 == 0) { 
+            let statsRow = rows + 2;
+            let elapsedSecs = (Date.now() - startTime) / 1000;
+            let seconds = parseInt((elapsedSecs % 60), 10);
+            seconds = seconds < 10 ? `0${seconds}` : seconds;
+            
+            readline.cursorTo(process.stdout, 0, statsRow);
+            process.stdout.write(`Time: ${(Math.floor(elapsedSecs/60))}:${seconds} | Pkts: ${count} \x1b[K`);
+        }
+        count++;
+
+    } catch (e) {
+        return;
+    }
+}
